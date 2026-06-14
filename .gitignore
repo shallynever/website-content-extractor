@@ -1,0 +1,15 @@
+node_modules/
+skill/node_modules/
+tmp/
+skill/tmp/
+skill/out/
+skill/.profiles/
+.DS_Store
+*.log
+
+# Browser profiles may contain cookies, tokens, history, and other private data.
+chrome-profiles/
+*.profile/
+
+# IDE local state
+.idea/

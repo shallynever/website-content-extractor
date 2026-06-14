@@ -1,0 +1,143 @@
+# Website Content Extractor Skill
+
+A Codex/agent skill for extracting readable website content into structured JSON and Markdown.
+
+It currently supports:
+
+- WeChat Official Account articles: `https://mp.weixin.qq.com/s/...`
+- GitHub repository ranking/list pages: topics, trending, and repository search
+- Yuque documents and Yuque Explore headline lists
+
+The skill uses site-specific persistent Chrome profiles so users can complete login or verification manually once, then reuse that state later.
+
+## Safety And Scope
+
+This project does not bypass login, CAPTCHA, verification, paywalls, permissions, or anti-automation controls. If a supported website requires a manual action, the extractor opens a visible browser session and waits for the user to complete it.
+
+Do not commit Chrome profiles, cookies, extracted private content, or `tmp/` output files.
+
+Users are responsible for complying with each website's terms of service, robots policy, copyright rules, privacy requirements, and applicable laws. Only extract content that you are allowed to access and store.
+
+## Repository Layout
+
+```text
+.
+├── README.md
+├── LICENSE
+└── skill/
+    ├── SKILL.md
+    ├── agents/openai.yaml
+    ├── package.json
+    ├── package-lock.json
+    └── scripts/
+```
+
+## Requirements
+
+- Node.js 22 or newer
+- npm
+- Google Chrome when running the browser-based extractor
+
+The CDP mode uses the runtime `fetch` and `WebSocket` APIs available in modern Node.js versions.
+
+## Install Dependencies
+
+```bash
+npm --prefix skill install
+```
+
+## Run Tests
+
+```bash
+npm --prefix skill test
+```
+
+## Extract A Page
+
+```bash
+npm --prefix skill run extract -- \
+  --url 'https://mp.weixin.qq.com/s/ARTICLE_ID' \
+  --wait-ms 8000
+```
+
+For first-time login or verification, run visibly with `--keep-open`:
+
+```bash
+npm --prefix skill run extract -- \
+  --url 'https://mp.weixin.qq.com/s/ARTICLE_ID' \
+  --wait-ms 15000 \
+  --keep-open
+```
+
+With `--keep-open`, the extractor checks repeatedly until readable content appears or the timeout expires. Defaults:
+
+- `--max-wait-ms 300000`
+- `--poll-ms 3000`
+
+## Chrome Profile Location
+
+By default, profiles are stored under:
+
+```text
+$HOME/Documents/Codex/shared/chrome-profiles/
+```
+
+Override this with:
+
+```bash
+export WEBSITE_CONTENT_EXTRACTOR_PROFILE_ROOT="$HOME/.local/share/website-content-extractor/chrome-profiles"
+```
+
+Registered profile folders:
+
+- `wechat-official-account`
+- `github`
+- `yuque`
+
+Chrome profiles may contain cookies, login state, browsing history, localStorage, and other private data. Do not upload profile directories, browser screenshots with private content, or extracted private documents to public issues or pull requests.
+
+## Output
+
+Default output files are written under:
+
+```text
+tmp/website-content-extractor/out/content-extract.json
+tmp/website-content-extractor/out/content-extract.md
+```
+
+Use `--output` to choose a different basename:
+
+```bash
+npm --prefix skill run extract -- \
+  --url 'https://github.com/topics/artificial-intelligence' \
+  --headless \
+  --wait-ms 5000 \
+  --output tmp/website-content-extractor/out/github-ai-topic
+```
+
+## Install As A Local Skill
+
+Symlink the `skill/` directory into your agent's skill directory. For Codex:
+
+```bash
+ln -s "$PWD/skill" "$HOME/.codex/skills/website-content-extractor"
+```
+
+For Claude Code:
+
+```bash
+ln -s "$PWD/skill" "$HOME/.claude/skills/website-content-extractor"
+```
+
+## Contributing
+
+Before opening a pull request, run:
+
+```bash
+npm --prefix skill install
+npm --prefix skill test
+```
+
+When adding a new website, register its URL matcher and dedicated Chrome profile in `skill/scripts/siteProfiles.mjs`, add a site-specific parser, and include parser tests using local HTML fixtures or inline HTML. Do not add real cookies, browser profiles, private extracted content, or live-site credentials to the repository.
+
+Parser functions are injected into the browser with `Function.prototype.toString()`, so each exported parser must be able to run without closing over module-level helper functions. If a helper is needed by a browser-injected parser, define it inside that parser or change the injection strategy with tests.
