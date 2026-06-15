@@ -1,17 +1,29 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { renderMarkdown } from "./articleParser.mjs";
 import { browserParserSource } from "./browserParsers.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
+import { DEFAULT_OUTPUT, DEFAULT_OUTPUT_ROOT, resolveOutputBase } from "./outputPaths.mjs";
 import { matchSiteProfile } from "./siteProfiles.mjs";
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const skillDir = dirname(scriptDir);
-const repoRoot = dirname(skillDir);
-const runtimeRoot = resolve(repoRoot, "tmp", "website-content-extractor");
-const DEFAULT_OUTPUT = resolve(runtimeRoot, "out", "content-extract");
+function logSaved(outputBase) {
+  console.log(`\nSaved:\n- ${outputBase}.json\n- ${outputBase}.md`);
+}
+
+function shouldSave(options) {
+  return options.save || options.outputWasProvided;
+}
+
+async function outputExtractionResult(options, result) {
+  console.log(renderMarkdown(result));
+
+  if (!shouldSave(options)) return;
+
+  const outputBase = resolveOutputBase(options, result);
+  await writeExtractionResult(outputBase, result);
+  logSaved(outputBase);
+}
 
 function parseArgs(argv) {
   const options = {
@@ -28,12 +40,16 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--url") options.url = argv[++index];
     else if (arg === "--profile") options.profile = argv[++index];
-    else if (arg === "--output") options.output = argv[++index];
+    else if (arg === "--output") {
+      options.output = argv[++index];
+      options.outputWasProvided = true;
+    }
     else if (arg === "--wait-ms") options.waitMs = Number(argv[++index]);
     else if (arg === "--max-wait-ms") options.maxWaitMs = Number(argv[++index]);
     else if (arg === "--poll-ms") options.pollMs = Number(argv[++index]);
     else if (arg === "--cdp-url") options.cdpUrl = argv[++index];
     else if (arg === "--headless") options.headed = false;
+    else if (arg === "--save") options.save = true;
     else if (arg === "--keep-open") options.keepOpen = true;
     else if (arg === "--help") options.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -50,7 +66,8 @@ Usage:
 Options:
   --url        Website URL to extract. Required.
   --profile    Persistent Chrome profile directory. Default: matched by site type
-  --output     Output file path without extension. Default: ${DEFAULT_OUTPUT}
+  --save       Save JSON and Markdown files. Default prints Markdown to stdout only.
+  --output     Save to this output path without extension. Implies --save. Default directory: ${DEFAULT_OUTPUT_ROOT}; default basename: page title on successful extraction, otherwise content-extract
   --wait-ms    Time to wait after opening the page. Default: 15000
   --max-wait-ms Maximum time to wait for manual verification in --keep-open mode. Default: 300000
   --poll-ms    Time between extraction checks in --keep-open mode. Default: 3000
@@ -200,7 +217,6 @@ async function main() {
   }
 
   const siteProfile = matchSiteProfile(options.url);
-  const outputBase = resolve(options.output);
 
   if (!siteProfile) {
     const result = {
@@ -208,9 +224,7 @@ async function main() {
       url: options.url,
       reason: "No extractor is registered for this website yet."
     };
-    await writeExtractionResult(outputBase, result);
-    console.log(JSON.stringify(result, null, 2));
-    console.log(`\nSaved:\n- ${outputBase}.json\n- ${outputBase}.md`);
+    await outputExtractionResult(options, result);
     return;
   }
 
@@ -218,9 +232,7 @@ async function main() {
     const result = await extractViaCdp(options, siteProfile);
     result.siteType = siteProfile.id;
     result.siteName = siteProfile.displayName;
-    await writeExtractionResult(outputBase, result);
-    console.log(JSON.stringify(result, null, 2));
-    console.log(`\nSaved:\n- ${outputBase}.json\n- ${outputBase}.md`);
+    await outputExtractionResult(options, result);
     return;
   }
 
@@ -267,10 +279,7 @@ async function main() {
     : await extractWithMetadata();
   result.siteType = siteProfile.id;
   result.siteName = siteProfile.displayName;
-  await writeExtractionResult(outputBase, result);
-
-  console.log(JSON.stringify(result, null, 2));
-  console.log(`\nSaved:\n- ${outputBase}.json\n- ${outputBase}.md`);
+  await outputExtractionResult(options, result);
 
   if (options.keepOpen) {
     if (result.status === "ok") {
