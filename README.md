@@ -98,21 +98,21 @@ Chrome profiles may contain cookies, login state, browsing history, localStorage
 
 ## Output
 
-Default output files are written under:
+By default, extraction prints Markdown to stdout and does not write files. Use `--save` to write JSON and Markdown under `$HOME/Documents/Codex/shared/website-content-extractor/out/`; on successful extraction without `--output`, the basename is generated from the page title, otherwise it falls back to `content-extract`:
 
 ```text
-tmp/website-content-extractor/out/content-extract.json
-tmp/website-content-extractor/out/content-extract.md
+$HOME/Documents/Codex/shared/website-content-extractor/out/<page-title>.json
+$HOME/Documents/Codex/shared/website-content-extractor/out/<page-title>.md
 ```
 
-Use `--output` to choose a different basename:
+Use `--output` to choose a different basename; it implies `--save`:
 
 ```bash
 npm --prefix skill run extract -- \
   --url 'https://github.com/topics/artificial-intelligence' \
   --headless \
   --wait-ms 5000 \
-  --output tmp/website-content-extractor/out/github-ai-topic
+  --output "$HOME/Documents/Codex/shared/website-content-extractor/out/github-ai-topic"
 ```
 
 ## Install As A Local Skill
