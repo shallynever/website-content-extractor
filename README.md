@@ -156,6 +156,17 @@ npm --prefix skill run extract -- \
   --output "$HOME/Documents/Codex/shared/website-content-extractor/out/github-ai-topic"
 ```
 
+Use `--markdown-format knowledge` when the Markdown should include YAML front matter for a knowledge base:
+
+```bash
+npm --prefix skill run extract -- \
+  --url 'https://github.com/topics/artificial-intelligence' \
+  --strategy static \
+  --markdown-format knowledge
+```
+
+The default `--markdown-format article` preserves the previous Markdown shape.
+
 ## Install As A Local Skill
 
 Symlink the `skill/` directory into your agent's skill directory. For Codex:

@@ -174,6 +174,17 @@ If the remote debugging endpoint is not reachable, the CLI prints a site-specifi
 
 By default, extraction prints Markdown to stdout and does not write files. Use `--save` to write JSON and Markdown under `$HOME/Documents/Codex/shared/website-content-extractor/out/`; on successful extraction without `--output`, the basename is generated from the page title, otherwise it falls back to `content-extract`.
 
+Use `--markdown-format knowledge` when the user wants Markdown with YAML front matter:
+
+```bash
+npm --prefix skill run extract -- \
+  --url 'https://github.com/topics/artificial-intelligence' \
+  --strategy static \
+  --markdown-format knowledge
+```
+
+Keep `--markdown-format article` as the default unless the user asks for knowledge-base style Markdown. Do not generate summaries, entity lists, or extra tags unless the user separately asks for that behavior.
+
 ```text
 $HOME/Documents/Codex/shared/website-content-extractor/out/
 ```

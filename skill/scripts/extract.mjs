@@ -1,11 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { chromium } from "playwright";
-import { renderMarkdown } from "./articleParser.mjs";
 import { closeContextOnError } from "./browserContextLifecycle.mjs";
 import { cdpConnectionHelp, cdpConnectionHelpMessage, fetchCdpVersion, normalizeCdpUrl } from "./cdpEndpoint.mjs";
 import { getExtractor } from "./extractorRegistry.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
+import { parseMarkdownFormat, renderFormattedMarkdown } from "./markdownFormat.mjs";
 import { DEFAULT_OUTPUT, DEFAULT_OUTPUT_ROOT, resolveOutputBase } from "./outputPaths.mjs";
 import { evaluateParserInPlaywrightPage, parserSourceForExtractor } from "./parserRunner.mjs";
 import { withExtractionMetadata } from "./resultMetadata.mjs";
@@ -22,12 +22,12 @@ function shouldSave(options) {
 }
 
 async function outputExtractionResult(options, result) {
-  console.log(renderMarkdown(result));
+  console.log(renderFormattedMarkdown(result, { markdownFormat: options.markdownFormat }));
 
   if (!shouldSave(options)) return;
 
   const outputBase = resolveOutputBase(options, result);
-  await writeExtractionResult(outputBase, result);
+  await writeExtractionResult(outputBase, result, options);
   logSaved(outputBase);
 }
 
@@ -40,7 +40,8 @@ function parseArgs(argv) {
     maxWaitMs: 300000,
     pollMs: 3000,
     keepOpen: false,
-    strategy: "auto"
+    strategy: "auto",
+    markdownFormat: "article"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -57,6 +58,7 @@ function parseArgs(argv) {
     else if (arg === "--cdp-url") options.cdpUrl = argv[++index];
     else if (arg === "--cdp-port") options.cdpPort = argv[++index];
     else if (arg === "--strategy") options.strategy = parseStrategy(argv[++index]);
+    else if (arg === "--markdown-format") options.markdownFormat = parseMarkdownFormat(argv[++index]);
     else if (arg === "--headless") options.headed = false;
     else if (arg === "--save") options.save = true;
     else if (arg === "--keep-open") options.keepOpen = true;
@@ -84,6 +86,7 @@ Options:
   --cdp-port   Convenience shortcut for --cdp-url http://127.0.0.1:<port>.
   --strategy   Extraction strategy: auto, static, browser, or cdp. Default: auto.
                GitHub public ranking pages use static first in auto mode.
+  --markdown-format Markdown output format: article or knowledge. Default: article.
   --headless   Run without showing the browser. Use only after verification is saved.
   --keep-open  Leave the browser open and keep checking until readable content appears or timeout.
 `;
@@ -93,10 +96,12 @@ async function ensureParent(filePath) {
   await mkdir(dirname(filePath), { recursive: true });
 }
 
-async function writeExtractionResult(outputBase, result) {
+async function writeExtractionResult(outputBase, result, options = {}) {
   await ensureParent(`${outputBase}.json`);
   await writeFile(`${outputBase}.json`, `${JSON.stringify(result, null, 2)}\n`);
-  await writeFile(`${outputBase}.md`, renderMarkdown(result));
+  await writeFile(`${outputBase}.md`, renderFormattedMarkdown(result, {
+    markdownFormat: options.markdownFormat
+  }));
 }
 
 async function extractContentFromPage(page, url, siteProfile, extractor = getExtractor(siteProfile.extractorId)) {
