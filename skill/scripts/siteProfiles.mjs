@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { getExtractor } from "./extractorRegistry.mjs";
 
 const DEFAULT_PROFILE_ROOT = join(
   process.env.HOME || ".",
@@ -14,14 +15,21 @@ function profilePath(name) {
   return join(PROFILE_ROOT, name);
 }
 
+function strategyMetadata(extractorId, strategyPriority) {
+  const extractor = getExtractor(extractorId);
+  return {
+    strategies: [...extractor.strategies],
+    defaultStrategy: "auto",
+    strategyPriority
+  };
+}
+
 export const SITE_PROFILES = [
   {
     id: "wechat-official-account",
     displayName: "WeChat Official Account",
     extractorId: "wechat",
-    strategies: ["browser", "cdp"],
-    defaultStrategy: "auto",
-    strategyPriority: ["browser"],
+    ...strategyMetadata("wechat", ["browser"]),
     chromeProfile: profilePath("wechat-official-account"),
     verificationKind: "manual",
     matches(url) {
@@ -32,9 +40,7 @@ export const SITE_PROFILES = [
     id: "github-repository-ranking",
     displayName: "GitHub Repository Ranking",
     extractorId: "github-repository-ranking",
-    strategies: ["static", "browser", "cdp"],
-    defaultStrategy: "auto",
-    strategyPriority: ["static", "browser"],
+    ...strategyMetadata("github-repository-ranking", ["static", "browser"]),
     chromeProfile: profilePath("github"),
     verificationKind: "manual",
     matches(url) {
@@ -49,9 +55,7 @@ export const SITE_PROFILES = [
     id: "yuque-explore-headlines",
     displayName: "Yuque Explore Headlines",
     extractorId: "yuque-explore-headlines",
-    strategies: ["browser", "cdp"],
-    defaultStrategy: "auto",
-    strategyPriority: ["browser"],
+    ...strategyMetadata("yuque-explore-headlines", ["browser"]),
     chromeProfile: profilePath("yuque"),
     verificationKind: "manual",
     matches(url) {
@@ -63,9 +67,7 @@ export const SITE_PROFILES = [
     id: "yuque-document",
     displayName: "Yuque Document",
     extractorId: "yuque-document",
-    strategies: ["browser", "cdp"],
-    defaultStrategy: "auto",
-    strategyPriority: ["browser"],
+    ...strategyMetadata("yuque-document", ["browser"]),
     chromeProfile: profilePath("yuque"),
     verificationKind: "manual",
     matches(url) {

@@ -4,8 +4,8 @@ import { chromium } from "playwright";
 import { renderMarkdown } from "./articleParser.mjs";
 import { closeContextOnError } from "./browserContextLifecycle.mjs";
 import { cdpConnectionHelp, cdpConnectionHelpMessage, fetchCdpVersion, normalizeCdpUrl } from "./cdpEndpoint.mjs";
+import { getExtractor } from "./extractorRegistry.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
-import { extractGitHubRepositoryRankingStatic } from "./githubStaticExtractor.mjs";
 import { DEFAULT_OUTPUT, DEFAULT_OUTPUT_ROOT, resolveOutputBase } from "./outputPaths.mjs";
 import { evaluateParserInPlaywrightPage, parserSourceForExtractor } from "./parserRunner.mjs";
 import { withExtractionMetadata } from "./resultMetadata.mjs";
@@ -99,10 +99,10 @@ async function writeExtractionResult(outputBase, result) {
   await writeFile(`${outputBase}.md`, renderMarkdown(result));
 }
 
-async function extractContentFromPage(page, url, siteProfile) {
+async function extractContentFromPage(page, url, siteProfile, extractor = getExtractor(siteProfile.extractorId)) {
   try {
     return await evaluateParserInPlaywrightPage(page, {
-      extractorId: siteProfile.extractorId,
+      extractorId: extractor.browserParser,
       url
     });
   } catch (error) {
@@ -126,7 +126,7 @@ async function sendCdpCommand(ws, pending, nextIdRef, method, params = {}, sessi
   return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
 }
 
-async function extractViaCdp(options, siteProfile) {
+async function extractViaCdp(options, siteProfile, extractor = getExtractor(siteProfile.extractorId)) {
   const cdpUrl = normalizeCdpUrl(options);
   let version;
   try {
@@ -164,7 +164,7 @@ async function extractViaCdp(options, siteProfile) {
   await send("Page.enable", {}, sessionId).catch(() => {});
   await new Promise((resolve) => setTimeout(resolve, options.waitMs));
 
-  const parserSource = parserSourceForExtractor(siteProfile.extractorId);
+  const parserSource = parserSourceForExtractor(extractor.browserParser);
   const expression = `(() => {
     const parser = new Function("return (" + ${JSON.stringify(parserSource)} + ");")();
     return parser(document, { url: ${JSON.stringify(options.url)}, currentUrl: location.href });
@@ -210,9 +210,10 @@ async function main() {
     siteProfile,
     cdpUrl: normalizeCdpUrl(options)
   });
+  const extractor = getExtractor(siteProfile.extractorId);
 
   const executeStatic = async () => {
-    if (siteProfile.extractorId !== "github-repository-ranking") {
+    if (!extractor.static) {
       return {
         status: "static_unavailable",
         strategy: "static",
@@ -220,11 +221,11 @@ async function main() {
         reason: `${siteProfile.displayName} does not support static extraction.`
       };
     }
-    return extractGitHubRepositoryRankingStatic(options.url);
+    return extractor.static(options.url);
   };
 
   const executeCdp = async () => {
-    const result = await extractViaCdp(options, siteProfile);
+    const result = await extractViaCdp(options, siteProfile, extractor);
     return withExtractionMetadata(result, { siteProfile, strategy: "cdp" });
   };
 
@@ -245,7 +246,7 @@ async function main() {
       await page.waitForTimeout(options.waitMs);
 
       const extractWithMetadata = async () => {
-        const result = await extractContentFromPage(page, options.url, siteProfile);
+        const result = await extractContentFromPage(page, options.url, siteProfile, extractor);
         return withExtractionMetadata(result, { siteProfile, strategy: "browser" });
       };
 
