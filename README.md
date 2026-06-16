@@ -74,6 +74,27 @@ With `--keep-open`, the extractor checks repeatedly until readable content appea
 - `--max-wait-ms 300000`
 - `--poll-ms 3000`
 
+## Extraction Strategy
+
+The extractor follows a light-to-heavy strategy model:
+
+- `--strategy auto`: default. Use the lightest registered strategy for the matched site, then escalate only when needed.
+- `--strategy static`: fetch public HTML and parse it without launching Chrome. Currently supported for GitHub repository ranking/list pages.
+- `--strategy browser`: launch the site-specific persistent Chrome profile with Playwright.
+- `--strategy cdp`: connect to an existing Chrome remote debugging endpoint. Requires `--cdp-url`.
+
+Decision logs are written to stderr so stdout can remain useful as Markdown output.
+
+GitHub public repository ranking/list pages can use static extraction:
+
+```bash
+npm --prefix skill run extract -- \
+  --url 'https://github.com/topics/artificial-intelligence' \
+  --strategy static
+```
+
+Use `--strategy browser` when you specifically want the previous browser-based behavior.
+
 ## Chrome Profile Location
 
 By default, profiles are stored under:

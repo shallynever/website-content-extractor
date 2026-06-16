@@ -9,6 +9,8 @@ Use this skill when the user provides a website URL and wants the page content e
 
 Start by saying briefly: “使用 website-content-extractor skill：先识别网站类型，匹配专用 Chrome profile，再提取页面内容；当前已支持微信公众号文章、GitHub 仓库榜单页、语雀文档和语雀逛逛头条。”
 
+默认使用 `--strategy auto`：GitHub 公开仓库榜单页先尝试 static fetch；微信公众号和语雀仍使用站点专用 Chrome profile，或在用户提供 `--cdp-url` 时连接已有 Chrome。不要绕过验证、登录、验证码、权限或反自动化机制。
+
 ## Core Rule
 
 Do not try to bypass verification, login checks, CAPTCHA, or anti-automation systems. This skill uses site-specific persistent Chrome profiles so the user can complete required verification manually, then later runs can reuse that saved state.
@@ -105,9 +107,10 @@ Example: extract an AI topic ranking:
 ```bash
 npm --prefix skill run extract -- \
   --url 'https://github.com/topics/artificial-intelligence' \
-  --headless \
-  --wait-ms 5000
+  --strategy static
 ```
+
+Use `--strategy browser` when a GitHub page needs the previous Playwright Chrome path.
 
 ### Yuque Documents And Explore Headlines
 
@@ -182,6 +185,9 @@ $HOME/Documents/Codex/shared/website-content-extractor/out/<page-title>.md
 ## Output Status
 
 - `ok`: content metadata and body were extracted. GitHub ranking pages include a `repositories` array; Yuque Explore pages include an `entries` array.
+- `needs_browser_rendering`: static HTML did not contain readable supported content; rerun with `--strategy browser` or let `--strategy auto` escalate.
+- `static_unavailable`: the matched site does not support static extraction.
+- `rate_limited`: the lightweight fetch path was rate limited.
 - `needs_verification`: the supported site showed verification, CAPTCHA, environment abnormality, or the expected content was not visible.
 - `needs_verification_timeout`: `--keep-open` waited for readable content until `--max-wait-ms` expired.
 - `unsupported_site`: no extractor is registered for this URL yet.
