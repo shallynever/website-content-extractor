@@ -1,5 +1,5 @@
 import { parseHTML } from "linkedom";
-import { parseGitHubRepositoryRanking } from "./githubParser.mjs";
+import { evaluateParserInStaticDocument } from "./parserRunner.mjs";
 
 function staticFailure(status, reason, extra = {}) {
   return {
@@ -43,7 +43,11 @@ export async function extractGitHubRepositoryRankingStatic(url, { fetchImpl = fe
 
   const html = await response.text();
   const { document } = parseHTML(html);
-  const parsed = parseGitHubRepositoryRanking(document, { url, currentUrl: url });
+  const parsed = evaluateParserInStaticDocument(document, {
+    extractorId: "github-repository-ranking",
+    url,
+    currentUrl: url
+  });
 
   if (parsed.status !== "ok") {
     return {

@@ -3,11 +3,11 @@ import { dirname, resolve } from "node:path";
 import { chromium } from "playwright";
 import { renderMarkdown } from "./articleParser.mjs";
 import { closeContextOnError } from "./browserContextLifecycle.mjs";
-import { browserParserSource } from "./browserParsers.mjs";
 import { cdpConnectionHelp, cdpConnectionHelpMessage, fetchCdpVersion, normalizeCdpUrl } from "./cdpEndpoint.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
 import { extractGitHubRepositoryRankingStatic } from "./githubStaticExtractor.mjs";
 import { DEFAULT_OUTPUT, DEFAULT_OUTPUT_ROOT, resolveOutputBase } from "./outputPaths.mjs";
+import { evaluateParserInPlaywrightPage, parserSourceForExtractor } from "./parserRunner.mjs";
 import { withExtractionMetadata } from "./resultMetadata.mjs";
 import { matchSiteProfile } from "./siteProfiles.mjs";
 import { runStrategyPlan } from "./strategyExecution.mjs";
@@ -99,58 +99,14 @@ async function writeExtractionResult(outputBase, result) {
   await writeFile(`${outputBase}.md`, renderMarkdown(result));
 }
 
-async function extractWechatFromPage(page, url) {
-  return page.evaluate(
-    ({ articleUrl, parserSource }) => {
-      const parser = new Function(`return (${parserSource});`)();
-      return parser(document, { url: articleUrl, currentUrl: location.href });
-    },
-    { articleUrl: url, parserSource: browserParserSource("wechat") }
-  );
-}
-
-async function extractGitHubRepositoryRankingFromPage(page, url) {
-  return page.evaluate(
-    ({ pageUrl, parserSource }) => {
-      const parser = new Function(`return (${parserSource});`)();
-      return parser(document, { url: pageUrl, currentUrl: location.href });
-    },
-    { pageUrl: url, parserSource: browserParserSource("github-repository-ranking") }
-  );
-}
-
-async function extractYuqueDocumentFromPage(page, url) {
-  return page.evaluate(
-    ({ pageUrl, parserSource }) => {
-      const parser = new Function(`return (${parserSource});`)();
-      return parser(document, { url: pageUrl, currentUrl: location.href });
-    },
-    { pageUrl: url, parserSource: browserParserSource("yuque-document") }
-  );
-}
-
-async function extractYuqueExploreFromPage(page, url) {
-  return page.evaluate(
-    ({ pageUrl, parserSource }) => {
-      const parser = new Function(`return (${parserSource});`)();
-      return parser(document, { url: pageUrl, currentUrl: location.href });
-    },
-    { pageUrl: url, parserSource: browserParserSource("yuque-explore-headlines") }
-  );
-}
-
 async function extractContentFromPage(page, url, siteProfile) {
-  if (siteProfile.extractorId === "wechat") {
-    return extractWechatFromPage(page, url);
-  }
-  if (siteProfile.extractorId === "github-repository-ranking") {
-    return extractGitHubRepositoryRankingFromPage(page, url);
-  }
-  if (siteProfile.extractorId === "yuque-document") {
-    return extractYuqueDocumentFromPage(page, url);
-  }
-  if (siteProfile.extractorId === "yuque-explore-headlines") {
-    return extractYuqueExploreFromPage(page, url);
+  try {
+    return await evaluateParserInPlaywrightPage(page, {
+      extractorId: siteProfile.extractorId,
+      url
+    });
+  } catch (error) {
+    if (!/^Unknown browser parser:/.test(error.message)) throw error;
   }
 
   return {
@@ -208,7 +164,7 @@ async function extractViaCdp(options, siteProfile) {
   await send("Page.enable", {}, sessionId).catch(() => {});
   await new Promise((resolve) => setTimeout(resolve, options.waitMs));
 
-  const parserSource = browserParserSource(siteProfile.extractorId);
+  const parserSource = parserSourceForExtractor(siteProfile.extractorId);
   const expression = `(() => {
     const parser = new Function("return (" + ${JSON.stringify(parserSource)} + ");")();
     return parser(document, { url: ${JSON.stringify(options.url)}, currentUrl: location.href });
