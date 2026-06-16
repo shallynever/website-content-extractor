@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { chromium } from "playwright";
 import { renderMarkdown } from "./articleParser.mjs";
+import { closeContextOnError } from "./browserContextLifecycle.mjs";
 import { browserParserSource } from "./browserParsers.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
 import { extractGitHubRepositoryRankingStatic } from "./githubStaticExtractor.mjs";
@@ -270,43 +271,45 @@ async function main() {
       viewport: { width: 1280, height: 900 }
     });
 
-    const page = context.pages()[0] || await context.newPage();
-    await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(options.waitMs);
+    return closeContextOnError(context, async () => {
+      const page = context.pages()[0] || await context.newPage();
+      await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.waitForTimeout(options.waitMs);
 
-    const extractWithMetadata = async () => {
-      const result = await extractContentFromPage(page, options.url, siteProfile);
-      return withExtractionMetadata(result, { siteProfile, strategy: "browser" });
-    };
+      const extractWithMetadata = async () => {
+        const result = await extractContentFromPage(page, options.url, siteProfile);
+        return withExtractionMetadata(result, { siteProfile, strategy: "browser" });
+      };
 
-    const result = options.keepOpen
-      ? await pollUntilOk({
-        maxWaitMs: options.maxWaitMs,
-        pollMs: options.pollMs,
-        sleep: (ms) => page.waitForTimeout(ms),
-        extract: extractWithMetadata,
-        onAttempt: ({ attempt, result: attemptResult }) => {
-          if (attemptResult.status === "ok") {
-            console.log(`Extraction succeeded on attempt ${attempt}.`);
-          } else if (attempt === 1) {
-            console.log(
-              `Manual action may be required: ${attemptResult.reason || attemptResult.status}. ` +
-              "Keep this browser window open; extraction will continue automatically."
-            );
-          } else {
-            console.log(`Still waiting for readable content (${attemptResult.status}) on attempt ${attempt}.`);
+      const result = options.keepOpen
+        ? await pollUntilOk({
+          maxWaitMs: options.maxWaitMs,
+          pollMs: options.pollMs,
+          sleep: (ms) => page.waitForTimeout(ms),
+          extract: extractWithMetadata,
+          onAttempt: ({ attempt, result: attemptResult }) => {
+            if (attemptResult.status === "ok") {
+              console.log(`Extraction succeeded on attempt ${attempt}.`);
+            } else if (attempt === 1) {
+              console.log(
+                `Manual action may be required: ${attemptResult.reason || attemptResult.status}. ` +
+                "Keep this browser window open; extraction will continue automatically."
+              );
+            } else {
+              console.log(`Still waiting for readable content (${attemptResult.status}) on attempt ${attempt}.`);
+            }
           }
-        }
-      })
-      : await extractWithMetadata();
+        })
+        : await extractWithMetadata();
 
-    if (options.keepOpen && result.status !== "ok") {
-      console.log("\nVerification did not complete before timeout. Browser left open for manual inspection.");
+      if (options.keepOpen && result.status !== "ok") {
+        console.log("\nVerification did not complete before timeout. Browser left open for manual inspection.");
+        return result;
+      }
+
+      await context.close();
       return result;
-    }
-
-    await context.close();
-    return result;
+    });
   };
 
   const result = await runStrategyPlan({
