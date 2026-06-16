@@ -113,6 +113,9 @@ test("matches WeChat Official Account URLs to the WeChat profile", () => {
     id: "wechat-official-account",
     displayName: "WeChat Official Account",
     extractorId: "wechat",
+    strategies: ["browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["browser"],
     chromeProfile: join(PROFILE_ROOT, "wechat-official-account"),
     verificationKind: "manual"
   });
@@ -123,6 +126,9 @@ test("matches GitHub URLs to the GitHub repository ranking profile", () => {
     id: "github-repository-ranking",
     displayName: "GitHub Repository Ranking",
     extractorId: "github-repository-ranking",
+    strategies: ["static", "browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["static", "browser"],
     chromeProfile: join(PROFILE_ROOT, "github"),
     verificationKind: "manual"
   });
@@ -133,6 +139,9 @@ test("matches Yuque document URLs to the Yuque profile", () => {
     id: "yuque-document",
     displayName: "Yuque Document",
     extractorId: "yuque-document",
+    strategies: ["browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["browser"],
     chromeProfile: join(PROFILE_ROOT, "yuque"),
     verificationKind: "manual"
   });
@@ -143,6 +152,9 @@ test("matches Yuque Explore URLs to the Yuque Explore profile", () => {
     id: "yuque-explore-headlines",
     displayName: "Yuque Explore Headlines",
     extractorId: "yuque-explore-headlines",
+    strategies: ["browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["browser"],
     chromeProfile: join(PROFILE_ROOT, "yuque"),
     verificationKind: "manual"
   });
@@ -248,4 +260,31 @@ test("renders markdown for Yuque Explore headline entries", () => {
   assert.match(markdown, /## Headlines/);
   assert.match(markdown, /1\. \[语雀专业会员支持试用MCP\]/);
   assert.match(markdown, /Views: 92/);
+});
+
+test("renders strategy metadata for successful GitHub ranking markdown", () => {
+  const markdown = renderMarkdown({
+    status: "ok",
+    title: "Trending repositories",
+    url: "https://github.com/trending",
+    siteName: "GitHub Repository Ranking",
+    strategy: "static",
+    listType: "github-repository-ranking",
+    repositories: []
+  });
+
+  assert.match(markdown, /- Strategy: static/);
+});
+
+test("renders next strategy for non-ok results", () => {
+  const markdown = renderMarkdown({
+    status: "needs_browser_rendering",
+    url: "https://github.com/trending",
+    strategy: "static",
+    nextStrategy: "browser",
+    reason: "Static HTML did not contain repository entries."
+  });
+
+  assert.match(markdown, /Strategy: static/);
+  assert.match(markdown, /Next strategy: browser/);
 });

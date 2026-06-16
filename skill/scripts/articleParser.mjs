@@ -107,7 +107,16 @@ export function parseWechatArticle(document, { url = "", currentUrl = "" } = {})
 
 export function renderMarkdown(result) {
   if (result.status !== "ok") {
-    return `# Website Content Extraction\n\nStatus: ${result.status}\n\nURL: ${result.url}\n\nReason: ${result.reason || "Manual verification is required."}\n`;
+    const strategyLines = [
+      result.strategy ? `Strategy: ${result.strategy}` : "",
+      result.nextStrategy ? `Next strategy: ${result.nextStrategy}` : ""
+    ].filter(Boolean).join("\n\n");
+
+    return `# Website Content Extraction\n\n` +
+      `Status: ${result.status}\n\n` +
+      `URL: ${result.url}\n\n` +
+      (strategyLines ? `${strategyLines}\n\n` : "") +
+      `Reason: ${result.reason || "Manual verification is required."}\n`;
   }
 
   if (result.listType === "github-repository-ranking") {
@@ -127,6 +136,7 @@ export function renderMarkdown(result) {
     return `# ${result.title || "GitHub Repository Ranking"}\n\n` +
       `- URL: ${result.url}\n` +
       (result.siteName ? `- Site: ${result.siteName}\n` : "") +
+      (result.strategy ? `- Strategy: ${result.strategy}\n` : "") +
       `\n## Repositories\n\n${repositories}\n`;
   }
 
@@ -144,12 +154,14 @@ export function renderMarkdown(result) {
     return `# ${result.title || "Yuque Explore Headlines"}\n\n` +
       `- URL: ${result.url}\n` +
       (result.siteName ? `- Site: ${result.siteName}\n` : "") +
+      (result.strategy ? `- Strategy: ${result.strategy}\n` : "") +
       `\n## Headlines\n\n${entries}\n`;
   }
 
   return `# ${result.title || "Untitled Website Content"}\n\n` +
     `- URL: ${result.url}\n` +
     (result.siteName ? `- Site: ${result.siteName}\n` : "") +
+    (result.strategy ? `- Strategy: ${result.strategy}\n` : "") +
     (result.account ? `- Account: ${result.account}\n` : "") +
     (result.publishTime ? `- Published: ${result.publishTime}\n` : "") +
     `\n` +
