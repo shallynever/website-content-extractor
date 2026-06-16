@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { renderMarkdown } from "./articleParser.mjs";
 import { closeContextOnError } from "./browserContextLifecycle.mjs";
 import { browserParserSource } from "./browserParsers.mjs";
+import { cdpConnectionHelp, cdpConnectionHelpMessage, fetchCdpVersion, normalizeCdpUrl } from "./cdpEndpoint.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
 import { extractGitHubRepositoryRankingStatic } from "./githubStaticExtractor.mjs";
 import { DEFAULT_OUTPUT, DEFAULT_OUTPUT_ROOT, resolveOutputBase } from "./outputPaths.mjs";
@@ -54,6 +55,7 @@ function parseArgs(argv) {
     else if (arg === "--max-wait-ms") options.maxWaitMs = Number(argv[++index]);
     else if (arg === "--poll-ms") options.pollMs = Number(argv[++index]);
     else if (arg === "--cdp-url") options.cdpUrl = argv[++index];
+    else if (arg === "--cdp-port") options.cdpPort = argv[++index];
     else if (arg === "--strategy") options.strategy = parseStrategy(argv[++index]);
     else if (arg === "--headless") options.headed = false;
     else if (arg === "--save") options.save = true;
@@ -79,6 +81,7 @@ Options:
   --max-wait-ms Maximum time to wait for manual verification in --keep-open mode. Default: 300000
   --poll-ms    Time between extraction checks in --keep-open mode. Default: 3000
   --cdp-url    Connect to an existing Chrome remote debugging endpoint instead of launching Chrome.
+  --cdp-port   Convenience shortcut for --cdp-url http://127.0.0.1:<port>.
   --strategy   Extraction strategy: auto, static, browser, or cdp. Default: auto.
                GitHub public ranking pages use static first in auto mode.
   --headless   Run without showing the browser. Use only after verification is saved.
@@ -168,7 +171,16 @@ async function sendCdpCommand(ws, pending, nextIdRef, method, params = {}, sessi
 }
 
 async function extractViaCdp(options, siteProfile) {
-  const version = await fetch(`${options.cdpUrl.replace(/\/$/, "")}/json/version`).then((response) => response.json());
+  const cdpUrl = normalizeCdpUrl(options);
+  let version;
+  try {
+    version = await fetchCdpVersion(cdpUrl);
+  } catch (error) {
+    throw new Error(cdpConnectionHelpMessage({
+      cause: error,
+      help: cdpConnectionHelp({ cdpUrl, url: options.url, siteProfile })
+    }));
+  }
   const ws = new WebSocket(version.webSocketDebuggerUrl);
   const pending = new Map();
   const nextIdRef = { value: 1 };
@@ -240,7 +252,7 @@ async function main() {
   const strategyPlan = buildStrategyPlan({
     requestedStrategy: options.strategy,
     siteProfile,
-    cdpUrl: options.cdpUrl || ""
+    cdpUrl: normalizeCdpUrl(options)
   });
 
   const executeStatic = async () => {

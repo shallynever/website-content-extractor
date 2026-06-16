@@ -9,7 +9,7 @@ Use this skill when the user provides a website URL and wants the page content e
 
 Start by saying briefly: “使用 website-content-extractor skill：先识别网站类型，匹配专用 Chrome profile，再提取页面内容；当前已支持微信公众号文章、GitHub 仓库榜单页、语雀文档和语雀逛逛头条。”
 
-默认使用 `--strategy auto`：GitHub 公开仓库榜单页先尝试 static fetch；微信公众号和语雀仍使用站点专用 Chrome profile，或在用户提供 `--cdp-url` 时连接已有 Chrome。不要绕过验证、登录、验证码、权限或反自动化机制。
+默认使用 `--strategy auto`：GitHub 公开仓库榜单页先尝试 static fetch；微信公众号和语雀仍使用站点专用 Chrome profile，或在用户显式提供 `--strategy cdp` 加 `--cdp-url` / `--cdp-port` 时连接已有 Chrome。不要绕过验证、登录、验证码、权限或反自动化机制。
 
 ## Core Rule
 
@@ -162,10 +162,13 @@ After the user confirms the page is logged in and loaded, extract through the ex
 ```bash
 npm --prefix skill run extract -- \
   --url 'https://www.yuque.com/dashboard/explore#headlines' \
-  --cdp-url 'http://127.0.0.1:9222' \
+  --strategy cdp \
+  --cdp-port 9222 \
   --wait-ms 10000 \
   --output "$HOME/Documents/Codex/shared/website-content-extractor/out/yuque-explore-headlines"
 ```
+
+If the remote debugging endpoint is not reachable, the CLI prints a site-specific `open -na 'Google Chrome' ... --remote-debugging-port=...` command. CDP remains opt-in; do not make it the hidden default for sites that can use the normal browser strategy.
 
 ## Outputs
 

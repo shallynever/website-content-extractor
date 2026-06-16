@@ -81,7 +81,7 @@ The extractor follows a light-to-heavy strategy model:
 - `--strategy auto`: default. Use the lightest registered strategy for the matched site, then escalate only when needed.
 - `--strategy static`: fetch public HTML and parse it without launching Chrome. Currently supported for GitHub repository ranking/list pages.
 - `--strategy browser`: launch the site-specific persistent Chrome profile with Playwright.
-- `--strategy cdp`: connect to an existing Chrome remote debugging endpoint. Requires `--cdp-url`.
+- `--strategy cdp`: connect to an existing Chrome remote debugging endpoint. Requires `--cdp-url` or `--cdp-port`.
 
 Decision logs are written to stderr so stdout can remain useful as Markdown output.
 
@@ -94,6 +94,26 @@ npm --prefix skill run extract -- \
 ```
 
 Use `--strategy browser` when you specifically want the previous browser-based behavior.
+
+For sites that reject Playwright-launched Chrome, start a visible Chrome instance with remote debugging and connect to it:
+
+```bash
+open -na 'Google Chrome' --args \
+  --user-data-dir="$HOME/Documents/Codex/shared/chrome-profiles/yuque" \
+  --remote-debugging-port=9222 \
+  'https://www.yuque.com/dashboard/explore#headlines'
+```
+
+Then extract through the existing browser:
+
+```bash
+npm --prefix skill run extract -- \
+  --url 'https://www.yuque.com/dashboard/explore#headlines' \
+  --strategy cdp \
+  --cdp-port 9222
+```
+
+If the endpoint is not reachable, the CLI prints a site-specific `open -na 'Google Chrome' ... --remote-debugging-port=...` command.
 
 ## Chrome Profile Location
 
