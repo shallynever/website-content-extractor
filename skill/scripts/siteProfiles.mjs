@@ -19,6 +19,9 @@ export const SITE_PROFILES = [
     id: "wechat-official-account",
     displayName: "WeChat Official Account",
     extractorId: "wechat",
+    strategies: ["browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["browser"],
     chromeProfile: profilePath("wechat-official-account"),
     verificationKind: "manual",
     matches(url) {
@@ -29,6 +32,9 @@ export const SITE_PROFILES = [
     id: "github-repository-ranking",
     displayName: "GitHub Repository Ranking",
     extractorId: "github-repository-ranking",
+    strategies: ["static", "browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["static", "browser"],
     chromeProfile: profilePath("github"),
     verificationKind: "manual",
     matches(url) {
@@ -43,6 +49,9 @@ export const SITE_PROFILES = [
     id: "yuque-explore-headlines",
     displayName: "Yuque Explore Headlines",
     extractorId: "yuque-explore-headlines",
+    strategies: ["browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["browser"],
     chromeProfile: profilePath("yuque"),
     verificationKind: "manual",
     matches(url) {
@@ -54,6 +63,9 @@ export const SITE_PROFILES = [
     id: "yuque-document",
     displayName: "Yuque Document",
     extractorId: "yuque-document",
+    strategies: ["browser", "cdp"],
+    defaultStrategy: "auto",
+    strategyPriority: ["browser"],
     chromeProfile: profilePath("yuque"),
     verificationKind: "manual",
     matches(url) {
@@ -71,6 +83,9 @@ export function matchSiteProfile(urlValue) {
     id: profile.id,
     displayName: profile.displayName,
     extractorId: profile.extractorId,
+    strategies: [...profile.strategies],
+    defaultStrategy: profile.defaultStrategy,
+    strategyPriority: [...profile.strategyPriority],
     chromeProfile: profile.chromeProfile,
     verificationKind: profile.verificationKind
   };
