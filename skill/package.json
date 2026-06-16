@@ -12,9 +12,7 @@
     "extract": "node scripts/extract.mjs"
   },
   "dependencies": {
+    "linkedom": "^0.18.12",
     "playwright": "^1.60.0"
-  },
-  "devDependencies": {
-    "linkedom": "^0.18.12"
   }
 }
