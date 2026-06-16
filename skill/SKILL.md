@@ -185,6 +185,16 @@ npm --prefix skill run extract -- \
 
 Keep `--markdown-format article` as the default unless the user asks for knowledge-base style Markdown. Do not generate summaries, entity lists, or extra tags unless the user separately asks for that behavior.
 
+For multiple URLs, use `--input urls.txt` and optionally `--report extraction-report.json`:
+
+```bash
+npm --prefix skill run extract -- \
+  --input urls.txt \
+  --report "$HOME/Documents/Codex/shared/website-content-extractor/out/extraction-report.json"
+```
+
+Batch mode prints Markdown for each URL to stdout and does not save extracted content unless `--save` or `--output` is provided. The report is safe to inspect because it records statuses, reasons, next strategies, and output paths, not extracted private content.
+
 ```text
 $HOME/Documents/Codex/shared/website-content-extractor/out/
 ```

@@ -2,6 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { chromium } from "playwright";
 import { closeContextOnError } from "./browserContextLifecycle.mjs";
+import { readBatchInput } from "./batchInput.mjs";
+import { batchReportEntry, writeBatchReport } from "./batchReport.mjs";
 import { cdpConnectionHelp, cdpConnectionHelpMessage, fetchCdpVersion, normalizeCdpUrl } from "./cdpEndpoint.mjs";
 import { getExtractor } from "./extractorRegistry.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
@@ -29,6 +31,7 @@ async function outputExtractionResult(options, result) {
   const outputBase = resolveOutputBase(options, result);
   await writeExtractionResult(outputBase, result, options);
   logSaved(outputBase);
+  return outputBase;
 }
 
 function parseArgs(argv) {
@@ -47,6 +50,8 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--url") options.url = argv[++index];
+    else if (arg === "--input") options.input = argv[++index];
+    else if (arg === "--report") options.report = argv[++index];
     else if (arg === "--profile") options.profile = argv[++index];
     else if (arg === "--output") {
       options.output = argv[++index];
@@ -73,9 +78,12 @@ function usage() {
   return `
 Usage:
   npm run extract -- --url <website-url> [--wait-ms 30000] [--keep-open]
+  npm run extract -- --input urls.txt [--report extraction-report.json]
 
 Options:
   --url        Website URL to extract. Required.
+  --input      Read one URL per line from a text file. Blank lines and # comments are ignored.
+  --report     Write a safe batch report JSON file with statuses and output paths.
   --profile    Persistent Chrome profile directory. Default: matched by site type
   --save       Save JSON and Markdown files. Default prints Markdown to stdout only.
   --output     Save to this output path without extension. Implies --save. Default directory: ${DEFAULT_OUTPUT_ROOT}; default basename: page title on successful extraction, otherwise content-extract
@@ -179,14 +187,12 @@ async function extractViaCdp(options, siteProfile, extractor = getExtractor(site
   return result.result.value;
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  if (options.help) {
-    console.log(usage().trim());
-    return;
+function validateOptions(options) {
+  if (!options.url && !options.input) {
+    throw new Error(`Missing required --url or --input.\n\n${usage().trim()}`);
   }
-  if (!options.url) {
-    throw new Error(`Missing required --url.\n\n${usage().trim()}`);
+  if (options.url && options.input) {
+    throw new Error("Use either --url or --input, not both.");
   }
   if (!Number.isFinite(options.waitMs) || options.waitMs < 0) {
     throw new Error("--wait-ms must be a non-negative number.");
@@ -197,23 +203,26 @@ async function main() {
   if (!Number.isFinite(options.pollMs) || options.pollMs <= 0) {
     throw new Error("--poll-ms must be a positive number.");
   }
+}
 
-  const siteProfile = matchSiteProfile(options.url);
+async function extractSingleUrl(options, url) {
+  const urlOptions = { ...options, url };
+  const siteProfile = matchSiteProfile(url);
 
   if (!siteProfile) {
     const result = {
       status: "unsupported_site",
-      url: options.url,
+      url,
       reason: "No extractor is registered for this website yet."
     };
-    await outputExtractionResult(options, result);
-    return;
+    const outputBase = await outputExtractionResult(urlOptions, result);
+    return { result, outputBase };
   }
 
   const strategyPlan = buildStrategyPlan({
-    requestedStrategy: options.strategy,
+    requestedStrategy: urlOptions.strategy,
     siteProfile,
-    cdpUrl: normalizeCdpUrl(options)
+    cdpUrl: normalizeCdpUrl(urlOptions)
   });
   const extractor = getExtractor(siteProfile.extractorId);
 
@@ -226,39 +235,39 @@ async function main() {
         reason: `${siteProfile.displayName} does not support static extraction.`
       };
     }
-    return extractor.static(options.url);
+    return extractor.static(url);
   };
 
   const executeCdp = async () => {
-    const result = await extractViaCdp(options, siteProfile, extractor);
+    const result = await extractViaCdp(urlOptions, siteProfile, extractor);
     return withExtractionMetadata(result, { siteProfile, strategy: "cdp" });
   };
 
   const executeBrowser = async () => {
-    const matchedProfile = options.profile || siteProfile.chromeProfile;
+    const matchedProfile = urlOptions.profile || siteProfile.chromeProfile;
     const profileDir = resolve(matchedProfile);
     await mkdir(profileDir, { recursive: true });
 
     const context = await chromium.launchPersistentContext(profileDir, {
       channel: "chrome",
-      headless: !options.headed,
+      headless: !urlOptions.headed,
       viewport: { width: 1280, height: 900 }
     });
 
     return closeContextOnError(context, async () => {
       const page = context.pages()[0] || await context.newPage();
-      await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-      await page.waitForTimeout(options.waitMs);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.waitForTimeout(urlOptions.waitMs);
 
       const extractWithMetadata = async () => {
-        const result = await extractContentFromPage(page, options.url, siteProfile, extractor);
+        const result = await extractContentFromPage(page, url, siteProfile, extractor);
         return withExtractionMetadata(result, { siteProfile, strategy: "browser" });
       };
 
-      const result = options.keepOpen
+      const result = urlOptions.keepOpen
         ? await pollUntilOk({
-          maxWaitMs: options.maxWaitMs,
-          pollMs: options.pollMs,
+          maxWaitMs: urlOptions.maxWaitMs,
+          pollMs: urlOptions.pollMs,
           sleep: (ms) => page.waitForTimeout(ms),
           extract: extractWithMetadata,
           onAttempt: ({ attempt, result: attemptResult }) => {
@@ -276,7 +285,7 @@ async function main() {
         })
         : await extractWithMetadata();
 
-      if (options.keepOpen && result.status !== "ok") {
+      if (urlOptions.keepOpen && result.status !== "ok") {
         console.log("\nVerification did not complete before timeout. Browser left open for manual inspection.");
         return result;
       }
@@ -297,7 +306,50 @@ async function main() {
     executeCdp
   });
 
-  await outputExtractionResult(options, result);
+  const outputBase = await outputExtractionResult(urlOptions, result);
+  return { result, outputBase };
+}
+
+function batchUrlOptions(options, url, index) {
+  const next = { ...options, url };
+  if (options.outputWasProvided) {
+    next.output = `${options.output}-${String(index + 1).padStart(3, "0")}`;
+  }
+  return next;
+}
+
+async function runBatch(options) {
+  const urls = await readBatchInput(options.input);
+  const entries = [];
+
+  for (const [index, url] of urls.entries()) {
+    console.error(`Batch ${index + 1}/${urls.length}: ${url}`);
+    const urlOptions = batchUrlOptions(options, url, index);
+    const { result, outputBase } = await extractSingleUrl(urlOptions, url);
+    entries.push(batchReportEntry({ url, result, outputBase }));
+  }
+
+  if (options.report) {
+    await writeBatchReport(options.report, entries);
+    console.error(`Batch report written: ${options.report}`);
+  }
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    console.log(usage().trim());
+    return;
+  }
+
+  validateOptions(options);
+
+  if (options.input) {
+    await runBatch(options);
+    return;
+  }
+
+  await extractSingleUrl(options, options.url);
 
   if (options.keepOpen) {
     return;

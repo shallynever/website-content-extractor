@@ -167,6 +167,16 @@ npm --prefix skill run extract -- \
 
 The default `--markdown-format article` preserves the previous Markdown shape.
 
+For batch extraction, put one URL per line in a text file. Blank lines and `#` comments are ignored:
+
+```bash
+npm --prefix skill run extract -- \
+  --input urls.txt \
+  --report "$HOME/Documents/Codex/shared/website-content-extractor/out/extraction-report.json"
+```
+
+Batch mode prints each extraction's Markdown to stdout. It does not save extracted content unless `--save` or `--output` is also provided. The report records URL, site type, strategy, status, output paths when saved, reason, and next strategy.
+
 ## Install As A Local Skill
 
 Symlink the `skill/` directory into your agent's skill directory. For Codex:
