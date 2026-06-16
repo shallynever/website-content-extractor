@@ -4,8 +4,12 @@ import { chromium } from "playwright";
 import { renderMarkdown } from "./articleParser.mjs";
 import { browserParserSource } from "./browserParsers.mjs";
 import { pollUntilOk } from "./extractionLoop.mjs";
+import { extractGitHubRepositoryRankingStatic } from "./githubStaticExtractor.mjs";
 import { DEFAULT_OUTPUT, DEFAULT_OUTPUT_ROOT, resolveOutputBase } from "./outputPaths.mjs";
+import { withExtractionMetadata } from "./resultMetadata.mjs";
 import { matchSiteProfile } from "./siteProfiles.mjs";
+import { runStrategyPlan } from "./strategyExecution.mjs";
+import { buildStrategyPlan, parseStrategy } from "./strategySelection.mjs";
 
 function logSaved(outputBase) {
   console.log(`\nSaved:\n- ${outputBase}.json\n- ${outputBase}.md`);
@@ -33,7 +37,8 @@ function parseArgs(argv) {
     waitMs: 15000,
     maxWaitMs: 300000,
     pollMs: 3000,
-    keepOpen: false
+    keepOpen: false,
+    strategy: "auto"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -48,6 +53,7 @@ function parseArgs(argv) {
     else if (arg === "--max-wait-ms") options.maxWaitMs = Number(argv[++index]);
     else if (arg === "--poll-ms") options.pollMs = Number(argv[++index]);
     else if (arg === "--cdp-url") options.cdpUrl = argv[++index];
+    else if (arg === "--strategy") options.strategy = parseStrategy(argv[++index]);
     else if (arg === "--headless") options.headed = false;
     else if (arg === "--save") options.save = true;
     else if (arg === "--keep-open") options.keepOpen = true;
@@ -72,6 +78,8 @@ Options:
   --max-wait-ms Maximum time to wait for manual verification in --keep-open mode. Default: 300000
   --poll-ms    Time between extraction checks in --keep-open mode. Default: 3000
   --cdp-url    Connect to an existing Chrome remote debugging endpoint instead of launching Chrome.
+  --strategy   Extraction strategy: auto, static, browser, or cdp. Default: auto.
+               GitHub public ranking pages use static first in auto mode.
   --headless   Run without showing the browser. Use only after verification is saved.
   --keep-open  Leave the browser open and keep checking until readable content appears or timeout.
 `;
@@ -228,70 +236,95 @@ async function main() {
     return;
   }
 
-  if (options.cdpUrl) {
-    const result = await extractViaCdp(options, siteProfile);
-    result.siteType = siteProfile.id;
-    result.siteName = siteProfile.displayName;
-    await outputExtractionResult(options, result);
-    return;
-  }
-
-  const matchedProfile = options.profile || siteProfile.chromeProfile;
-  const profileDir = resolve(matchedProfile);
-  await mkdir(profileDir, { recursive: true });
-
-  const context = await chromium.launchPersistentContext(profileDir, {
-    channel: "chrome",
-    headless: !options.headed,
-    viewport: { width: 1280, height: 900 }
+  const strategyPlan = buildStrategyPlan({
+    requestedStrategy: options.strategy,
+    siteProfile,
+    cdpUrl: options.cdpUrl || ""
   });
 
-  const page = context.pages()[0] || await context.newPage();
-  await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(options.waitMs);
+  const executeStatic = async () => {
+    if (siteProfile.extractorId !== "github-repository-ranking") {
+      return {
+        status: "static_unavailable",
+        strategy: "static",
+        nextStrategy: "browser",
+        reason: `${siteProfile.displayName} does not support static extraction.`
+      };
+    }
+    return extractGitHubRepositoryRankingStatic(options.url);
+  };
 
-  const extractWithMetadata = async () => {
-    const result = await extractContentFromPage(page, options.url, siteProfile);
-    result.siteType = siteProfile.id;
-    result.siteName = siteProfile.displayName;
+  const executeCdp = async () => {
+    const result = await extractViaCdp(options, siteProfile);
+    return withExtractionMetadata(result, { siteProfile, strategy: "cdp" });
+  };
+
+  const executeBrowser = async () => {
+    const matchedProfile = options.profile || siteProfile.chromeProfile;
+    const profileDir = resolve(matchedProfile);
+    await mkdir(profileDir, { recursive: true });
+
+    const context = await chromium.launchPersistentContext(profileDir, {
+      channel: "chrome",
+      headless: !options.headed,
+      viewport: { width: 1280, height: 900 }
+    });
+
+    const page = context.pages()[0] || await context.newPage();
+    await page.goto(options.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(options.waitMs);
+
+    const extractWithMetadata = async () => {
+      const result = await extractContentFromPage(page, options.url, siteProfile);
+      return withExtractionMetadata(result, { siteProfile, strategy: "browser" });
+    };
+
+    const result = options.keepOpen
+      ? await pollUntilOk({
+        maxWaitMs: options.maxWaitMs,
+        pollMs: options.pollMs,
+        sleep: (ms) => page.waitForTimeout(ms),
+        extract: extractWithMetadata,
+        onAttempt: ({ attempt, result: attemptResult }) => {
+          if (attemptResult.status === "ok") {
+            console.log(`Extraction succeeded on attempt ${attempt}.`);
+          } else if (attempt === 1) {
+            console.log(
+              `Manual action may be required: ${attemptResult.reason || attemptResult.status}. ` +
+              "Keep this browser window open; extraction will continue automatically."
+            );
+          } else {
+            console.log(`Still waiting for readable content (${attemptResult.status}) on attempt ${attempt}.`);
+          }
+        }
+      })
+      : await extractWithMetadata();
+
+    if (options.keepOpen && result.status !== "ok") {
+      console.log("\nVerification did not complete before timeout. Browser left open for manual inspection.");
+      return result;
+    }
+
+    await context.close();
     return result;
   };
 
-  const result = options.keepOpen
-    ? await pollUntilOk({
-      maxWaitMs: options.maxWaitMs,
-      pollMs: options.pollMs,
-      sleep: (ms) => page.waitForTimeout(ms),
-      extract: extractWithMetadata,
-      onAttempt: ({ attempt, result: attemptResult }) => {
-        if (attemptResult.status === "ok") {
-          console.log(`Extraction succeeded on attempt ${attempt}.`);
-        } else if (attempt === 1) {
-          console.log(
-            `Manual action may be required: ${attemptResult.reason || attemptResult.status}. ` +
-            "Keep this browser window open; extraction will continue automatically."
-          );
-        } else {
-          console.log(`Still waiting for readable content (${attemptResult.status}) on attempt ${attempt}.`);
-        }
-      }
-    })
-    : await extractWithMetadata();
-  result.siteType = siteProfile.id;
-  result.siteName = siteProfile.displayName;
+  const result = await runStrategyPlan({
+    plan: strategyPlan,
+    logDecision: (line) => console.error(line),
+    executeStatic: async () => withExtractionMetadata(await executeStatic(), {
+      siteProfile,
+      strategy: "static"
+    }),
+    executeBrowser,
+    executeCdp
+  });
+
   await outputExtractionResult(options, result);
 
   if (options.keepOpen) {
-    if (result.status === "ok") {
-      await context.close();
-      return;
-    }
-
-    console.log("\nVerification did not complete before timeout. Browser left open for manual inspection.");
     return;
   }
-
-  await context.close();
 }
 
 main().catch((error) => {
